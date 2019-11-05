@@ -339,6 +339,37 @@ func TestAccAWSDirectoryServiceDirectory_withAliasAndSso(t *testing.T) {
 	})
 }
 
+func TestAccAWSDirectoryServiceDirectory_shared(t *testing.T) {
+	resourceName := "aws_directory_service_directory.test"
+
+	resource.ParallelTest(t, resource.TestCase{
+		PreCheck: func() {
+			testAccPreCheck(t)
+			testAccPreCheckAWSDirectoryService(t)
+			testAccPreCheckAWSDirectoryServiceSimpleDirectory(t)
+		},
+		Providers:    testAccProviders,
+		CheckDestroy: testAccCheckDirectoryServiceDirectoryDestroy,
+		Steps: []resource.TestStep{
+			{
+				Config: testAccDirectoryServiceDirectoryConfig_shared(),
+				Check: resource.ComposeTestCheckFunc(
+					testAccCheckServiceDirectoryExists("aws_directory_service_directory.test"),
+					resource.TestCheckResourceAttrSet("aws_directory_service_directory.test", "shared"),
+				),
+			},
+			{
+				ResourceName:      resourceName,
+				ImportState:       true,
+				ImportStateVerify: true,
+				ImportStateVerifyIgnore: []string{
+					"password",
+				},
+			},
+		},
+	})
+}
+
 func testAccCheckDirectoryServiceDirectoryDestroy(s *terraform.State) error {
 	dsconn := testAccProvider.Meta().(*AWSClient).dsconn
 
@@ -366,6 +397,9 @@ func testAccCheckDirectoryServiceDirectoryDestroy(s *terraform.State) error {
 	}
 
 	return nil
+}
+
+func TestAccAWSDirectoryServiceDirectory_sharedCrossAccount(t *testing.T) {
 }
 
 func testAccCheckServiceDirectoryExists(name string) resource.TestCheckFunc {
@@ -495,6 +529,35 @@ func testAccPreCheckAWSDirectoryServiceSimpleDirectory(t *testing.T) {
 
 	if err != nil && !isAWSErr(err, directoryservice.ErrCodeInvalidParameterException, "VpcSettings must be specified") {
 		t.Fatalf("unexpected PreCheck error: %s", err)
+	}
+}
+
+func testAccCheckServiceDirectoryShared(name, alias string) resource.TestCheckFunc {
+	return func(s *terraform.State) error {
+		rs, ok := s.RootModule().Resources[name]
+		if !ok {
+			return fmt.Errorf("Not found: %s", name)
+		}
+
+		if rs.Primary.ID == "" {
+			return fmt.Errorf("No ID is set")
+		}
+
+		dsconn := testAccProvider.Meta().(*AWSClient).dsconn
+		out, err := dsconn.DescribeDirectories(&directoryservice.DescribeDirectoriesInput{
+			DirectoryIds: []*string{aws.String(rs.Primary.ID)},
+		})
+
+		if err != nil {
+			return err
+		}
+
+		if *out.DirectoryDescriptions[0].Alias != alias {
+			return fmt.Errorf("DS directory Alias mismatch - actual: %q, expected: %q",
+				*out.DirectoryDescriptions[0].Alias, alias)
+		}
+
+		return nil
 	}
 }
 
@@ -947,4 +1010,52 @@ resource "aws_subnet" "test" {
   }
 }
 `, alias)
+}
+
+func testAccDirectoryServiceDirectoryConfig_shared() string {
+	return fmt.Sprintf(`
+data "aws_availability_zones" "available" {
+  state = "available"
+}
+
+resource "aws_directory_service_directory" "test" {
+  name = "corp.notexample.com"
+  password = "SuperSecretPassw0rd"
+  size = "Small"
+
+  vpc_settings {
+    vpc_id = "${aws_vpc.main.id}"
+    subnet_ids = ["${aws_subnet.one.id}", "${aws_subnet.two.id}"]
+  }
+
+  shared {
+    target = "111111111111"
+    notes = "Terraform will care"
+  }
+}
+
+resource "aws_vpc" "main" {
+  cidr_block = "10.0.0.0/16"
+	tags = {
+		Name = "terraform-testacc-directory-service-directory-shared"
+	}
+}
+
+resource "aws_subnet" "one" {
+  vpc_id = "${aws_vpc.main.id}"
+  availability_zone = "${data.aws_availability_zones.available.names[0]}"
+  cidr_block = "10.0.1.0/24"
+  tags = {
+    Name = "terraform-testacc-directory-service-directory-shared"
+  }
+}
+resource "aws_subnet" "two" {
+  vpc_id = "${aws_vpc.main.id}"
+  availability_zone = "${data.aws_availability_zones.available.names[1]}"
+  cidr_block = "10.0.2.0/24"
+  tags = {
+    Name = "terraform-testacc-directory-service-directory-shared"
+  }
+}
+`)
 }
