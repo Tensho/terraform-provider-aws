@@ -89,8 +89,6 @@ func dataSourceAwsWorkspacesDirectory() *schema.Resource {
 			"workspace_access_properties": {
 				Type:     schema.TypeList,
 				Computed: true,
-				Optional: true,
-				MaxItems: 1,
 				Elem: &schema.Resource{
 					Schema: map[string]*schema.Schema{
 						"device_type_android": {
@@ -134,8 +132,6 @@ func dataSourceAwsWorkspacesDirectory() *schema.Resource {
 			"workspace_creation_properties": {
 				Type:     schema.TypeList,
 				Computed: true,
-				Optional: true,
-				MaxItems: 1,
 				Elem: &schema.Resource{
 					Schema: map[string]*schema.Schema{
 						"custom_security_group_id": {
